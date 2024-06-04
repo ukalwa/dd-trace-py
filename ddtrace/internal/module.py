@@ -277,7 +277,7 @@ class BaseModuleWatchdog(abc.ABC):
 
     def __init__(self) -> None:
         self._finding: t.Set[str] = set()
-        self._loading: t.List[str] = []
+        self._modules_loaded: t.Set[str] = set(sys.modules.keys())  # start with existing loaded modules
 
         # DEV: pkg_resources support to prevent errors such as
         # NotImplementedError: Can't perform this operation for unregistered
@@ -366,12 +366,16 @@ class BaseModuleWatchdog(abc.ABC):
         finally:
             self._finding.remove(fullname)
 
-    def _audit_hook(self, event: str, args: tuple) -> None:
-        if event == "import":
-            self._loading.append(args[0])
-        elif event == "exec":
-            if self._loading:
-                module_name = self._loading.pop()
+    def _audit_hook(self, event: str, _: tuple) -> None:
+        # Every time we `exec` a code object, check to see if any new
+        # modules have been loaded and call any after import hooks on them
+        # This works because Python will allocate space for the code object
+        # in sys.modules while executing it.
+        if event == "exec":
+            latest_modules = set(sys.modules.keys())
+            new_modules = latest_modules - self._modules_loaded
+            self._modules_loaded = latest_modules
+            for module_name in new_modules:
                 module = sys.modules.get(module_name)
                 if module is not None:
                     self.after_import(module)
