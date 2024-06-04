@@ -2,7 +2,7 @@ import sys
 from types import ModuleType
 import weakref
 
-from ddtrace.vendor.wrapt.importer import when_imported
+from ddtrace.internal import core
 
 from .. import _asyncio
 from .. import _threading
@@ -11,8 +11,8 @@ from .. import _threading
 _gevent_tracer = None
 
 
-@when_imported("gevent")
-def install_greenlet_tracer(gevent):
+@core.on_import("gevent")
+def install_greenlet_tracer(_, gevent):
     global _gevent_tracer
 
     try:

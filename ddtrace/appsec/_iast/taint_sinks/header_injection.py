@@ -1,9 +1,9 @@
 from typing import Text
 
 from ddtrace.contrib import trace_utils
+from ddtrace.internal import core
 from ddtrace.internal.logger import get_logger
 from ddtrace.settings.asm import config as asm_config
-from ddtrace.vendor.wrapt.importer import when_imported
 
 from ..._common_module_patches import try_unwrap
 from ..._constants import IAST_SPAN_TAGS
@@ -34,18 +34,18 @@ def patch():
     if not set_and_check_module_is_patched("django", default_attr="_datadog_header_injection_patch"):
         return
 
-    @when_imported("wsgiref.headers")
-    def _(m):
+    @core.on_import("wsgiref.headers")
+    def _(_, m):
         trace_utils.wrap(m, "Headers.add_header", _iast_h)
         trace_utils.wrap(m, "Headers.__setitem__", _iast_h)
 
-    @when_imported("werkzeug.datastructures")
-    def _(m):
+    @core.on_import("werkzeug.datastructures")
+    def _(_, m):
         trace_utils.wrap(m, "Headers.add", _iast_h)
         trace_utils.wrap(m, "Headers.set", _iast_h)
 
-    @when_imported("django.http.response")
-    def _(m):
+    @core.on_import("django.http.response")
+    def _(_, m):
         trace_utils.wrap(m, "HttpResponse.__setitem__", _iast_h)
         trace_utils.wrap(m, "HttpResponseBase.__setitem__", _iast_h)
         try:

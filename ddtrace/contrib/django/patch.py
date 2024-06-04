@@ -39,7 +39,6 @@ from ddtrace.settings.asm import config as asm_config
 from ddtrace.settings.integration import IntegrationConfig
 from ddtrace.vendor import wrapt
 from ddtrace.vendor.packaging.version import parse as parse_version
-from ddtrace.vendor.wrapt.importer import when_imported
 
 from ...appsec._utils import _UserInfoRetriever
 from ...internal.utils import get_argument_value
@@ -770,18 +769,20 @@ def unwrap_views(func, instance, args, kwargs):
 def _patch(django):
     Pin().onto(django)
 
-    when_imported("django.apps.registry")(lambda m: trace_utils.wrap(m, "Apps.populate", traced_populate(django)))
+    core.on_import("django.apps.registry")(lambda _, m: trace_utils.wrap(m, "Apps.populate", traced_populate(django)))
 
     if config.django.instrument_middleware:
-        when_imported("django.core.handlers.base")(
-            lambda m: trace_utils.wrap(m, "BaseHandler.load_middleware", traced_load_middleware(django))
+        core.on_import("django.core.handlers.base")(
+            lambda _, m: trace_utils.wrap(m, "BaseHandler.load_middleware", traced_load_middleware(django))
         )
 
-    when_imported("django.core.handlers.wsgi")(lambda m: trace_utils.wrap(m, "WSGIRequest.__init__", wrap_wsgi_environ))
+    core._import("django.core.handlers.wsgi")(
+        lambda _, m: trace_utils.wrap(m, "WSGIRequest.__init__", wrap_wsgi_environ)
+    )
     core.dispatch("django.patch", ())
 
-    @when_imported("django.core.handlers.base")
-    def _(m):
+    @core.on_import("django.core.handlers.base")
+    def _(_, m):
         import django
 
         trace_utils.wrap(m, "BaseHandler.get_response", traced_get_response(django))
@@ -791,8 +792,8 @@ def _patch(django):
 
             trace_utils.wrap(m, "BaseHandler.get_response_async", traced_get_response_async(django))
 
-    @when_imported("django.contrib.auth")
-    def _(m):
+    @core.on_import("django.contrib.auth")
+    def _(_, m):
         trace_utils.wrap(m, "login", traced_login(django))
         trace_utils.wrap(m, "authenticate", traced_authenticate(django))
 
@@ -800,29 +801,31 @@ def _patch(django):
     # because get_response and get_asgi_application will be used. We must rely on the version instead of coalescing
     # with the previous patching hook because of circular imports within `django.core.asgi`.
     if django.VERSION >= (3, 1):
-        when_imported("django.core.asgi")(
-            lambda m: trace_utils.wrap(m, "get_asgi_application", traced_get_asgi_application(django))
+        core.on_imported("django.core.asgi")(
+            lambda _, m: trace_utils.wrap(m, "get_asgi_application", traced_get_asgi_application(django))
         )
 
     if config.django.instrument_templates:
-        when_imported("django.template.base")(
-            lambda m: trace_utils.wrap(m, "Template.render", traced_template_render(django))
+        core.on_import("django.template.base")(
+            lambda _, m: trace_utils.wrap(m, "Template.render", traced_template_render(django))
         )
 
     if django.VERSION < (4, 0, 0):
-        when_imported("django.conf.urls")(lambda m: trace_utils.wrap(m, "url", traced_urls_path(django)))
+        core.on_import("django.conf.urls")(lambda _, m: trace_utils.wrap(m, "url", traced_urls_path(django)))
 
     if django.VERSION >= (2, 0, 0):
 
-        @when_imported("django.urls")
-        def _(m):
+        @core.on_import("django.urls")
+        def _(_, m):
             trace_utils.wrap(m, "path", traced_urls_path(django))
             trace_utils.wrap(m, "re_path", traced_urls_path(django))
 
-    when_imported("django.views.generic.base")(lambda m: trace_utils.wrap(m, "View.as_view", traced_as_view(django)))
+    core.on_import("django.views.generic.base")(
+        lambda _, m: trace_utils.wrap(m, "View.as_view", traced_as_view(django))
+    )
 
-    @when_imported("channels.routing")
-    def _(m):
+    @core.on_import("channels.routing")
+    def _(_, m):
         import channels
 
         channels_version = parse_version(channels.__version__)

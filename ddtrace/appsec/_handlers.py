@@ -16,7 +16,6 @@ from ddtrace.internal.constants import HTTP_REQUEST_BLOCKED
 from ddtrace.internal.logger import get_logger
 from ddtrace.internal.utils.http import parse_form_multipart
 from ddtrace.settings.asm import config as asm_config
-from ddtrace.vendor.wrapt import when_imported
 from ddtrace.vendor.wrapt import wrap_function_wrapper as _w
 
 
@@ -355,8 +354,8 @@ def _on_django_patch():
             _set_metric_iast_instrumented_source(OriginType.PARAMETER)
             _set_metric_iast_instrumented_source(OriginType.PARAMETER_NAME)
             _set_metric_iast_instrumented_source(OriginType.BODY)
-            when_imported("django.http.request")(
-                lambda m: trace_utils.wrap(
+            core.on_import("django.http.request")(
+                lambda _, m: trace_utils.wrap(
                     m,
                     "QueryDict.__getitem__",
                     functools.partial(if_iast_taint_returned_object_for, OriginType.PARAMETER),

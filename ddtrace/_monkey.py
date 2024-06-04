@@ -1,10 +1,12 @@
 import importlib
 import os
 import threading
+from types import ModuleType
 from typing import TYPE_CHECKING  # noqa:F401
+from typing import Dict  # noqa:F401
+from typing import Tuple  # noqa:F401
 
-from ddtrace.vendor.wrapt.importer import when_imported
-
+from .internal import core as _core
 from .internal.logger import get_logger
 from .internal.utils import formats
 from .settings import _config as config
@@ -12,8 +14,6 @@ from .settings.asm import config as asm_config
 
 
 if TYPE_CHECKING:  # pragma: no cover
-    from typing import Any  # noqa:F401
-    from typing import Callable  # noqa:F401
     from typing import List  # noqa:F401
     from typing import Union  # noqa:F401
 
@@ -111,7 +111,7 @@ _PATCHED_MODULES = set()
 # Module names that need to be patched for a given integration. If the module
 # name coincides with the integration name, then there is no need to add an
 # entry here.
-_MODULES_FOR_CONTRIB = {
+_MODULES_FOR_CONTRIB: Dict[str, Tuple[str, ...]] = {
     "elasticsearch": (
         "elasticsearch",
         "elasticsearch1",
@@ -154,10 +154,10 @@ class ModuleNotFoundException(PatchException):
 
 
 def _on_import_factory(module, prefix="ddtrace.contrib", raise_errors=True, patch_indicator=True):
-    # type: (str, str, bool, Union[bool, List[str]]) -> Callable[[Any], None]
+    # type: (str, str, bool, Union[bool, List[str]]) -> _core.ImportHookType
     """Factory to create an import hook for the provided module name"""
 
-    def on_import(hook):
+    def on_import(_: ModuleType) -> None:
         if config._telemetry_enabled:
             from .internal import telemetry
         # Import and patch module
@@ -259,7 +259,7 @@ def patch(raise_errors=True, patch_modules_prefix=DEFAULT_MODULES_PREFIX, **patc
         modules_to_patch = _MODULES_FOR_CONTRIB.get(contrib, (contrib,))
         for module in modules_to_patch:
             # Use factory to create handler to close over `module` and `raise_errors` values from this loop
-            when_imported(module)(
+            _core.on_import(module)(
                 _on_import_factory(contrib, raise_errors=raise_errors, patch_indicator=patch_indicator)
             )
 

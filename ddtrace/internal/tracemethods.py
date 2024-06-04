@@ -1,8 +1,10 @@
+from types import ModuleType
 from typing import List
 from typing import Tuple
 
 import wrapt
 
+from ddtrace.internal import core
 from ddtrace.internal.utils.deprecations import DDTraceDeprecationWarning
 from ddtrace.vendor.debtcollector import deprecate
 
@@ -154,8 +156,8 @@ def _install_trace_methods(raw_dd_trace_methods: str) -> None:
 def trace_method(module, method_name):
     # type: (str, str) -> None
 
-    @wrapt.importer.when_imported(module)
-    def _(m):
+    @core.on_import(module)
+    def _(_: str, m: ModuleType) -> None:
         wrapt.wrap_function_wrapper(m, method_name, trace_wrapper)
 
 
