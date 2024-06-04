@@ -157,7 +157,7 @@ def _on_import_factory(module, prefix="ddtrace.contrib", raise_errors=True, patc
     # type: (str, str, bool, Union[bool, List[str]]) -> _core.ImportHookType
     """Factory to create an import hook for the provided module name"""
 
-    def on_import(_: ModuleType) -> None:
+    def on_import(_: str, __: ModuleType) -> None:
         if config._telemetry_enabled:
             from .internal import telemetry
         # Import and patch module

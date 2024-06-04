@@ -3,16 +3,18 @@ import sys
 from types import ModuleType
 from typing import Any
 from typing import Callable
+from typing import DefaultDict
+from typing import Set
 
 from ddtrace import config
 
 from .event_hub import on
 
 
-_imported_modules = set(sys.modules.keys())
-_import_hooks = defaultdict(set)
-
 ImportHookType = Callable[[str, ModuleType], Any]
+
+_imported_modules: Set[str] = set(sys.modules.keys())
+_import_hooks: DefaultDict[str, Set[ImportHookType]] = defaultdict(set)
 
 
 def _call_hooks() -> None:
