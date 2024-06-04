@@ -65,8 +65,7 @@ def test_watchdog_install_uninstall():
     ModuleWatchdog.install()
 
     assert ModuleWatchdog.is_installed()
-    if sys.version_info < (3, 8):
-        assert isinstance(sys.meta_path[0], ModuleWatchdog)
+    assert isinstance(sys.meta_path[0], ModuleWatchdog)
 
     ModuleWatchdog.uninstall()
 

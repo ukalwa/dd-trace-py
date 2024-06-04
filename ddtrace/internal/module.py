@@ -27,24 +27,6 @@ log = get_logger(__name__)
 _run_code = None
 _run_module_transformers: t.List[TransformerType] = []
 _post_run_module_hooks: t.List[ModuleHookType] = []
-_audit_hooks: t.Set[t.Callable[[str, t.Tuple], None]] = set()
-
-
-def _module_watchdog_audit_hook(event: str, args: t.Tuple) -> None:
-    for hook in _audit_hooks:
-        hook(event, args)
-
-
-if sys.version_info >= (3, 8):
-    sys.addaudithook(_module_watchdog_audit_hook)
-
-
-def _add_audit_hook(hook: t.Callable[[str, t.Tuple], None]) -> None:
-    _audit_hooks.add(hook)
-
-
-def _remove_audit_hook(hook: t.Callable[[str, t.Tuple], None]) -> None:
-    _audit_hooks.remove(hook)
 
 
 def _wrapped_run_code(*args: t.Any, **kwargs: t.Any) -> t.Dict[str, t.Any]:
@@ -277,7 +259,6 @@ class BaseModuleWatchdog(abc.ABC):
 
     def __init__(self) -> None:
         self._finding: t.Set[str] = set()
-        self._modules_loaded: t.Set[str] = set(sys.modules.keys())  # start with existing loaded modules
 
         # DEV: pkg_resources support to prevent errors such as
         # NotImplementedError: Can't perform this operation for unregistered
@@ -366,20 +347,6 @@ class BaseModuleWatchdog(abc.ABC):
         finally:
             self._finding.remove(fullname)
 
-    def _audit_hook(self, event: str, _: tuple) -> None:
-        # Every time we `exec` a code object, check to see if any new
-        # modules have been loaded and call any after import hooks on them
-        # This works because Python will allocate space for the code object
-        # in sys.modules while executing it.
-        if event == "exec":
-            latest_modules = set(sys.modules.keys())
-            new_modules = latest_modules - self._modules_loaded
-            self._modules_loaded = latest_modules
-            for module_name in new_modules:
-                module = sys.modules.get(module_name)
-                if module is not None:
-                    self.after_import(module)
-
     @classmethod
     def _check_installed(cls) -> None:
         if not cls.is_installed():
@@ -392,9 +359,7 @@ class BaseModuleWatchdog(abc.ABC):
             raise RuntimeError("%s is already installed" % cls.__name__)
 
         cls._instance = cls()
-        _add_audit_hook(cls._instance._audit_hook)
-        if sys.version_info < (3, 8):
-            cls._instance._add_to_meta_path()
+        cls._instance._add_to_meta_path()
         log.debug("%s installed", cls)
 
     @classmethod
@@ -410,11 +375,7 @@ class BaseModuleWatchdog(abc.ABC):
         class.
         """
         cls._check_installed()
-
-        if cls._instance:
-            _remove_audit_hook(cls._instance._audit_hook)
-        if sys.version_info < (3, 8):
-            cls._remove_from_meta_path()
+        cls._remove_from_meta_path()
 
         cls._instance = None
 

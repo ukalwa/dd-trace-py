@@ -6,6 +6,7 @@ from typing import Dict
 from typing import List
 from typing import Optional
 from typing import Tuple
+import sys
 
 from ddtrace import config
 
@@ -132,3 +133,8 @@ def dispatch_with_results(event_id: str, args: Tuple[Any, ...] = ()) -> EventRes
             results[name] = EventResult(ResultType.RESULT_EXCEPTION, None, e)
 
     return results
+
+
+# Emit all sys.audit events through the hub
+if sys.version_info >= (3, 8):
+    sys.addaudithook(dispatch)
