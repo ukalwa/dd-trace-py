@@ -258,7 +258,7 @@ class TelemetryWriter(PeriodicService):
         self._forked = False  # type: bool
         self._events_queue = []  # type: List[Dict]
         self._configuration_queue = {}  # type: Dict[str, Dict]
-        self._lock = forksafe.RLock()  # type: forksafe.ResetObject
+        self._lock = forksafe.Lock()  # type: forksafe.ResetObject
         self._imported_dependencies: Dict[str, Distribution] = dict()
 
         self._is_agentless = config._ci_visibility_agentless_enabled if agentless is None else agentless
@@ -304,11 +304,13 @@ class TelemetryWriter(PeriodicService):
         self._enabled = False
         if TelemetryWriterModuleWatchdog.is_installed():
             TelemetryWriterModuleWatchdog.uninstall()
-        self.reset_queues()
         if self._is_periodic and self.status is ServiceStatus.RUNNING:
             self.stop()
         else:
             self.status = ServiceStatus.STOPPED
+
+        # Reset the queues last, after stopping since `self.stop()` may do a final flush
+        self.reset_queues()
 
     def add_event(self, payload, payload_type):
         # type: (Union[Dict[str, Any], List[Any]], str) -> None
@@ -331,8 +333,7 @@ class TelemetryWriter(PeriodicService):
                 "payload": payload,
                 "request_type": payload_type,
             }
-            with self._lock:
-                self._events_queue.append(event)
+            self._events_queue.append(event)
 
     def add_integration(self, integration_name, patched, auto_patched=None, error_msg=None, version=""):
         # type: (str, bool, Optional[bool], Optional[str], Optional[str]) -> None
@@ -557,22 +558,22 @@ class TelemetryWriter(PeriodicService):
     def _flush_integrations_queue(self):
         # type: () -> List[Dict]
         """Flushes and returns a list of all queued integrations"""
-        # DEV: We must be holding self._lock to call this method
-        integrations = list(self._integrations_queue.values())
-        self._integrations_queue = dict()
+        with self._lock:
+            integrations = list(self._integrations_queue.values())
+            self._integrations_queue = dict()
         return integrations
 
     def _flush_new_imported_dependencies(self) -> List[str]:
-        # DEV: We must be holding self._lock to call this method
-        new_deps = TelemetryWriterModuleWatchdog.get_new_imports()
+        with self._lock:
+            new_deps = TelemetryWriterModuleWatchdog.get_new_imports()
         return new_deps
 
     def _flush_configuration_queue(self):
         # type: () -> List[Dict]
         """Flushes and returns a list of all queued configurations"""
-        # DEV: We must be holding self._lock to call this method
-        configurations = list(self._configuration_queue.values())
-        self._configuration_queue = {}
+        with self._lock:
+            configurations = list(self._configuration_queue.values())
+            self._configuration_queue = {}
         return configurations
 
     def _app_client_configuration_changed_event(self, configurations):
@@ -585,12 +586,12 @@ class TelemetryWriter(PeriodicService):
 
     def _update_dependencies_event(self, newly_imported_deps: List[str]):
         """Adds events to report imports done since the last periodic run"""
-        # DEV: We must be holding self._lock to call this method
 
         if not config._telemetry_dependency_collection or not self._enabled:
             return
 
-        packages = update_imported_dependencies(self._imported_dependencies, newly_imported_deps)
+        with self._lock:
+            packages = update_imported_dependencies(self._imported_dependencies, newly_imported_deps)
 
         if packages:
             payload = {"dependencies": packages}
@@ -642,8 +643,7 @@ class TelemetryWriter(PeriodicService):
                 data["tags"] = ",".join(["%s:%s" % (k, str(v).lower()) for k, v in tags.items()])
             if stack_trace:
                 data["stack_trace"] = stack_trace
-            with self._lock:
-                self._logs.add(data)
+            self._logs.add(data)
 
     def add_gauge_metric(self, namespace, name, value, tags=None):
         # type: (str,str, float, MetricTagType) -> None
@@ -705,9 +705,9 @@ class TelemetryWriter(PeriodicService):
 
     def _flush_log_metrics(self):
         # type () -> Set[Metric]
-        # DEV: We must be holding self._lock to call this
-        log_metrics = self._logs
-        self._logs = set()
+        with self._lock:
+            log_metrics = self._logs
+            self._logs = set()
         return log_metrics
 
     def _generate_metrics_event(self, namespace_metrics):
@@ -731,48 +731,47 @@ class TelemetryWriter(PeriodicService):
         self.add_event({"logs": list(logs)}, TELEMETRY_TYPE_LOGS)
 
     def periodic(self, force_flush=False):
-        with self._lock:
-            namespace_metrics = self._namespace.flush()
-            if namespace_metrics:
-                self._generate_metrics_event(namespace_metrics)
+        namespace_metrics = self._namespace.flush()
+        if namespace_metrics:
+            self._generate_metrics_event(namespace_metrics)
 
-            logs_metrics = self._flush_log_metrics()
-            if logs_metrics:
-                self._generate_logs_event(logs_metrics)
+        logs_metrics = self._flush_log_metrics()
+        if logs_metrics:
+            self._generate_logs_event(logs_metrics)
 
-            # Telemetry metrics and logs should be aggregated into payloads every time periodic is called.
-            # This ensures metrics and logs are submitted in 0 to 10 second time buckets.
-            # Optimization: All other events should be aggregated using `config._telemetry_heartbeat_interval`.
-            # Telemetry payloads will be submitted according to `config._telemetry_heartbeat_interval`.
-            if self._is_periodic and force_flush is False:
-                if self._periodic_count < self._periodic_threshold:
-                    self._periodic_count += 1
-                    return
-                self._periodic_count = 0
+        # Telemetry metrics and logs should be aggregated into payloads every time periodic is called.
+        # This ensures metrics and logs are submitted in 0 to 10 second time buckets.
+        # Optimization: All other events should be aggregated using `config._telemetry_heartbeat_interval`.
+        # Telemetry payloads will be submitted according to `config._telemetry_heartbeat_interval`.
+        if self._is_periodic and force_flush is False:
+            if self._periodic_count < self._periodic_threshold:
+                self._periodic_count += 1
+                return
+            self._periodic_count = 0
 
-            integrations = self._flush_integrations_queue()
-            if integrations:
-                self._app_integrations_changed_event(integrations)
+        integrations = self._flush_integrations_queue()
+        if integrations:
+            self._app_integrations_changed_event(integrations)
 
-            configurations = self._flush_configuration_queue()
-            if configurations:
-                self._app_client_configuration_changed_event(configurations)
+        configurations = self._flush_configuration_queue()
+        if configurations:
+            self._app_client_configuration_changed_event(configurations)
 
-            if config._telemetry_dependency_collection:
-                newly_imported_deps = self._flush_new_imported_dependencies()
-                if newly_imported_deps:
-                    self._update_dependencies_event(newly_imported_deps)
+        if config._telemetry_dependency_collection:
+            newly_imported_deps = self._flush_new_imported_dependencies()
+            if newly_imported_deps:
+                self._update_dependencies_event(newly_imported_deps)
 
-            # Send a heartbeat event to the agent, this is required to keep RC connections alive
-            self._app_heartbeat_event()
+        # Send a heartbeat event to the agent, this is required to keep RC connections alive
+        self._app_heartbeat_event()
 
-            telemetry_events = self._flush_events_queue()
-            for telemetry_event in telemetry_events:
-                self._client.send_event(telemetry_event)
+        telemetry_events = self._flush_events_queue()
+        for telemetry_event in telemetry_events:
+            self._client.send_event(telemetry_event)
 
     def app_shutdown(self):
+        # Final flush is handled by `_stop_service`
         self._app_closing_event()
-        self.periodic(force_flush=True)
         self.disable()
 
     def reset_queues(self):
@@ -785,9 +784,9 @@ class TelemetryWriter(PeriodicService):
     def _flush_events_queue(self):
         # type: () -> List[Dict]
         """Flushes and returns a list of all telemtery event"""
-        # DEV: We must be holding self._lock to call this method
-        events = self._events_queue
-        self._events_queue = []
+        with self._lock:
+            events = self._events_queue
+            self._events_queue = []
         return events
 
     def _fork_writer(self):
@@ -812,5 +811,9 @@ class TelemetryWriter(PeriodicService):
     def _stop_service(self, join=True, *args, **kwargs):
         # type: (...) -> None
         super(TelemetryWriter, self)._stop_service(*args, **kwargs)
+
         if join:
             self.join(timeout=2)
+
+        # Perform a final flush before stopping
+        self.periodic(force_flush=True)
