@@ -9,7 +9,11 @@ strip = "debuginfo"
 opt-level = 3
 
 [dependencies]
+anyhow = { version = "1" }
 pyo3 = { version = "0.21.2", features = ["extension-module"] }
+datadog-remote-config = { git = "https://github.com/DataDog/libdatadog.git", branch = "bob/remote-config" }
+ddcommon = { git = "https://github.com/DataDog/libdatadog.git", branch = "bob/remote-config" }
+tokio = { version = "1", features = ["full"] }
 
 [build-dependencies]
 pyo3-build-config = "0.21.2"
