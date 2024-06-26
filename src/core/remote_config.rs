@@ -1,157 +1,108 @@
-use anyhow::Result;
+use anyhow::Error;
+use http::uri::Uri;
 use pyo3::prelude::*;
 use pyo3::types::PyFunction;
-use std::collections::HashMap;
 use std::sync::Arc;
-use std::sync::Mutex;
-use tokio::task::spawn;
+use tokio::runtime::Runtime;
 use tokio::task::JoinHandle;
+use tokio::time::sleep;
+use tokio::time::Duration;
 
 use datadog_remote_config::fetch::ConfigInvariants;
-use datadog_remote_config::fetch::FileStorage;
-use datadog_remote_config::fetch::SingleFetcher;
-use datadog_remote_config::RemoteConfigCapabilities;
-use datadog_remote_config::RemoteConfigPath;
+use datadog_remote_config::fetch::SingleChangesFetcher;
+use datadog_remote_config::file_change_tracker::Change;
+use datadog_remote_config::file_change_tracker::FilePath;
+use datadog_remote_config::file_storage::ParsedFileStorage;
+use datadog_remote_config::file_storage::RawFile;
+use datadog_remote_config::RemoteConfigData;
 use datadog_remote_config::RemoteConfigProduct;
+use datadog_remote_config::RemoteConfigSource;
 use datadog_remote_config::Target;
 use ddcommon::Endpoint;
 
-#[derive(Default)]
-struct Storage {
-    pub files: Mutex<HashMap<RemoteConfigPath, Arc<Mutex<DataStore>>>>,
-}
+async fn poll_remote_config(
+    service: String,
+    env: String,
+    app_version: String,
+    runtime_id: String,
+    on_change: impl Fn(u64, Arc<RawFile<Result<RemoteConfigData, Error>>>),
+) {
+    let mut fetcher = SingleChangesFetcher::new(
+        ParsedFileStorage::default(),
+        Target {
+            service,
+            env,
+            app_version,
+        },
+        runtime_id,
+        ConfigInvariants {
+            language: "python".to_string(),
+            tracer_version: "2.10.0".to_string(),
+            endpoint: Endpoint {
+                url: "http://localhost:8126".parse::<Uri>().unwrap(),
+                api_key: None,
+            },
+            products: vec![
+                RemoteConfigProduct::ApmTracing,
+                RemoteConfigProduct::LiveDebugger,
+            ],
+            capabilities: vec![],
+        },
+    );
 
-#[derive(Default, Clone)]
-struct RcStorage(Arc<Storage>);
+    loop {
+        match fetcher.fetch_changes().await {
+            Ok(changes) => {
+                for change in changes {
+                    match change {
+                        Change::Add(file) => {
+                            on_change(1, file.clone());
+                        }
+                        Change::Update(file, _) => {
+                            on_change(2, file.clone());
+                        }
+                        Change::Remove(file) => {
+                            on_change(3, file.clone());
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("Fetch failed with {e}");
+                fetcher.set_last_error(e.to_string());
+            }
+        }
 
-struct PathStore {
-    path: RemoteConfigPath,
-    storage: Arc<RcStorage>,
-    pub data: Arc<Mutex<DataStore>>,
-}
-
-#[derive(Debug, Eq, PartialEq)]
-struct DataStore {
-    pub version: u64,
-    pub contents: String,
-}
-
-impl Drop for PathStore {
-    fn drop(&mut self) {
-        self.storage.0.files.lock().unwrap().remove(&self.path);
+        sleep(Duration::from_nanos(fetcher.get_interval()).max(Duration::from_secs(1))).await;
     }
 }
 
-impl FileStorage for RcStorage {
-    type StoredFile = PathStore;
+#[pyclass(name = "RemoteConfigPath", module = "ddtrace.internal.core._core")]
+pub struct RemoteConfigPathPy {
+    pub source: RemoteConfigSource,
+    pub product: RemoteConfigProduct,
+    pub config_id: String,
+    pub name: String,
+}
 
-    fn store(
-        &self,
-        version: u64,
-        path: RemoteConfigPath,
-        contents: Vec<u8>,
-    ) -> Result<Arc<Self::StoredFile>> {
-        let data = Arc::new(Mutex::new(DataStore {
-            version,
-            contents: String::from_utf8(contents).unwrap(),
-        }));
-        assert!(self
-            .0
-            .files
-            .lock()
-            .unwrap()
-            .insert(path.clone(), data.clone())
-            .is_none());
-        Ok(Arc::new(PathStore {
-            path: path.clone(),
-            storage: self.clone().into(),
-            data,
-        }))
+#[pymethods]
+impl RemoteConfigPathPy {
+    fn __repr__(&self) -> PyResult<String> {
+        Ok(format!(
+            "RemoteConfigPath(source=, product={}, config_id={}, name={})",
+            self.product, self.config_id, self.name,
+        ))
     }
-
-    fn update(&self, file: &Arc<Self::StoredFile>, version: u64, contents: Vec<u8>) -> Result<()> {
-        *file.data.lock().unwrap() = DataStore {
-            version,
-            contents: String::from_utf8(contents).unwrap(),
-        };
-        Ok(())
-    }
-}
-
-#[pyclass(name = "RemoteConfigEndpoint", module = "ddtrace.internal.core._core")]
-pub struct RemoteConfigEndpointPy {
-    url: String,
-    api_key: Option<String>,
-}
-
-#[pyclass(name = "RemoteConfigProduct", module = "ddtrace.internal.core._core")]
-pub enum RemoteConfigProductPy {
-    ApmTracing = RemoteConfigProduct::ApmTracing as isize,
-    LiveDebugger = RemoteConfigProduct::LiveDebugger as isize,
-}
-
-#[pyclass(
-    name = "RemoteConfigCapabilitiesPy",
-    module = "ddtrace.internal.core._core"
-)]
-pub enum RemoteConfigCapabilitiesPy {
-    AsmActivation = RemoteConfigCapabilities::AsmActivation as isize,
-    AsmIpBlocking = RemoteConfigCapabilities::AsmIpBlocking as isize,
-    AsmDdRules = RemoteConfigCapabilities::AsmDdRules as isize,
-    AsmExclusions = RemoteConfigCapabilities::AsmExclusions as isize,
-    AsmRequestBlocking = RemoteConfigCapabilities::AsmRequestBlocking as isize,
-    AsmResponseBlocking = RemoteConfigCapabilities::AsmResponseBlocking as isize,
-    AsmUserBlocking = RemoteConfigCapabilities::AsmUserBlocking as isize,
-    AsmCustomRules = RemoteConfigCapabilities::AsmCustomRules as isize,
-    AsmCustomBlockingResponse = RemoteConfigCapabilities::AsmCustomBlockingResponse as isize,
-    AsmTrustedIps = RemoteConfigCapabilities::AsmTrustedIps as isize,
-    AsmApiSecuritySampleRate = RemoteConfigCapabilities::AsmApiSecuritySampleRate as isize,
-    ApmTracingSampleRate = RemoteConfigCapabilities::ApmTracingSampleRate as isize,
-    ApmTracingLogsInjection = RemoteConfigCapabilities::ApmTracingLogsInjection as isize,
-    ApmTracingHttpHeaderTags = RemoteConfigCapabilities::ApmTracingHttpHeaderTags as isize,
-    ApmTracingCustomTags = RemoteConfigCapabilities::ApmTracingCustomTags as isize,
-    AsmProcessorOverrides = RemoteConfigCapabilities::AsmProcessorOverrides as isize,
-    AsmCustomDataScanners = RemoteConfigCapabilities::AsmCustomDataScanners as isize,
-    AsmExclusionData = RemoteConfigCapabilities::AsmExclusionData as isize,
-    ApmTracingEnabled = RemoteConfigCapabilities::ApmTracingEnabled as isize,
-    ApmTracingDataStreamsEnabled = RemoteConfigCapabilities::ApmTracingDataStreamsEnabled as isize,
-    AsmRaspSqli = RemoteConfigCapabilities::AsmRaspSqli as isize,
-    AsmRaspLfi = RemoteConfigCapabilities::AsmRaspLfi as isize,
-    AsmRaspSsrf = RemoteConfigCapabilities::AsmRaspSsrf as isize,
-    AsmRaspShi = RemoteConfigCapabilities::AsmRaspShi as isize,
-    AsmRaspXxe = RemoteConfigCapabilities::AsmRaspXxe as isize,
-    AsmRaspRce = RemoteConfigCapabilities::AsmRaspRce as isize,
-    AsmRaspNosqli = RemoteConfigCapabilities::AsmRaspNosqli as isize,
-    AsmRaspXss = RemoteConfigCapabilities::AsmRaspXss as isize,
-    ApmTracingSampleRules = RemoteConfigCapabilities::ApmTracingSampleRules as isize,
-    CsmActivation = RemoteConfigCapabilities::CsmActivation as isize,
-}
-
-impl Into<RemoteConfigCapabilities> for RemoteConfigCapabilitiesPy {
-    fn into(self) -> RemoteConfigCapabilities {
-        (self as isize).into()
-    }
-}
-
-impl Into<RemoteConfigProduct> for RemoteConfigProductPy {
-    fn into(self) -> RemoteConfigProduct {
-        (self as isize).into()
-    }
-}
-
-#[pyclass(name = "RemoteConfigSettings", module = "ddtrace.internal.core._core")]
-pub struct RemoteConfigSettingsPy {
-    language: String,
-    tracer_version: String,
-    endpoint: RemoteConfigEndpointPy,
-    products: Vec<RemoteConfigProductPy>,
-    capabilities: Vec<RemoteConfigCapabilitiesPy>,
 }
 
 #[pyclass(name = "RemoteConfigClient", module = "ddtrace.internal.core._core")]
 pub struct RemoteConfigClientPy {
-    fetcher: SingleFetcher<RcStorage>,
-    on_fetch: Py<PyFunction>,
+    service: String,
+    env: String,
+    app_version: String,
+    runtime_id: String,
+    on_change: Py<PyFunction>,
+    rt: Option<Runtime>,
     handle: Option<JoinHandle<()>>,
 }
 
@@ -163,43 +114,81 @@ impl RemoteConfigClientPy {
         env: String,
         app_version: String,
         runtime_id: String,
-        config_bound: &Bound<'_, RemoteConfigSettingsPy>,
-        on_fetch: &Bound<'_, PyFunction>,
+        on_change: &Bound<'_, PyFunction>,
     ) -> Self {
-        let config = config_bound.borrow();
-        let invariants = ConfigInvariants {
-            language: config.language,
-            tracer_version: config.tracer_version,
-            endpoint: Endpoint {
-                url: config.endpoint.url,
-                api_key: config.endpoint.api_key,
-            },
-            products: config.products.into_iter().map(|p| p.into()).collect(),
-            capabilities: config.capabilities.into_iter().map(|c| c.into()).collect(),
-        };
-
         RemoteConfigClientPy {
-            fetcher: SingleFetcher::new(
-                RcStorage::default(),
-                Target {
-                    service,
-                    env,
-                    app_version,
-                },
-                runtime_id,
-                invariants,
-            ),
-            on_fetch: on_fetch.unbind(),
+            service,
+            env,
+            app_version,
+            runtime_id,
+            on_change: on_change.clone().unbind(),
+            rt: None,
             handle: None,
         }
     }
 
-    pub fn start(&self) -> PyResult<()> {
-        if self.handle.is_none() {}
+    fn is_running(&self) -> bool {
+        if let Some(handle) = &self.handle {
+            return !handle.is_finished();
+        }
+        false
+    }
+
+    pub fn start(&mut self, py: Python<'_>) -> PyResult<()> {
+        if self.is_running() {
+            return Ok(());
+        }
+
+        py.allow_threads(|| {
+            if self.rt.is_none() {
+                self.rt = Some(Runtime::new().unwrap());
+            }
+
+            if let Some(rt) = &self.rt {
+                let service = self.service.clone();
+                let env = self.env.clone();
+                let app_version = self.app_version.clone();
+                let runtime_id = self.runtime_id.clone();
+                let on_change = self.on_change.clone();
+
+                self.handle = Some(rt.spawn(poll_remote_config(
+                    service,
+                    env,
+                    app_version,
+                    runtime_id,
+                    move |change_type, file| {
+                        let path = RemoteConfigPathPy {
+                            source: file.path().source.clone(),
+                            product: file.path().product,
+                            config_id: file.path().config_id.clone(),
+                            name: file.path().name.clone(),
+                        };
+                        let version = file.version();
+                        let contents = match *file.contents() {
+                            Ok(data) => Some(data),
+                            Err(_) => None,
+                        };
+
+                        let _ = Python::with_gil(|py| {
+                            on_change
+                                .call1(py, (change_type, path, version, format!("{:?}", contents)))
+                                .unwrap();
+                        });
+                    },
+                )));
+            }
+        });
         Ok(())
     }
 
-    pub fn stop(&self) -> PyResult<()> {
+    pub fn stop(&mut self) -> PyResult<()> {
+        if !self.is_running() {
+            return Ok(());
+        }
+        if let Some(handle) = &self.handle {
+            handle.abort();
+        }
+        self.handle = None;
         Ok(())
     }
 }

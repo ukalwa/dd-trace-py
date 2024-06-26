@@ -126,6 +126,8 @@ exclude = [
   ".riot",
   ".tox",
   ".venv",
+  "build",
+  "dist",
 ]
 
 [tool.slotscheck]
