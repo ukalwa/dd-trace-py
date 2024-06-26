@@ -1,7 +1,10 @@
 use anyhow::Error;
 use http::uri::Uri;
 use pyo3::prelude::*;
+use pyo3::types::PyAny;
 use pyo3::types::PyFunction;
+use pyo3::types::PyNone;
+use pyo3::types::PyString;
 use std::sync::Arc;
 use tokio::runtime::Runtime;
 use tokio::task::JoinHandle;
@@ -15,6 +18,7 @@ use datadog_remote_config::file_change_tracker::FilePath;
 use datadog_remote_config::file_storage::ParsedFileStorage;
 use datadog_remote_config::file_storage::RawFile;
 use datadog_remote_config::RemoteConfigData;
+use datadog_remote_config::RemoteConfigPath;
 use datadog_remote_config::RemoteConfigProduct;
 use datadog_remote_config::RemoteConfigSource;
 use datadog_remote_config::Target;
@@ -79,18 +83,44 @@ async fn poll_remote_config(
 
 #[pyclass(name = "RemoteConfigPath", module = "ddtrace.internal.core._core")]
 pub struct RemoteConfigPathPy {
-    pub source: RemoteConfigSource,
-    pub product: RemoteConfigProduct,
-    pub config_id: String,
-    pub name: String,
+    path: RemoteConfigPath,
 }
 
 #[pymethods]
 impl RemoteConfigPathPy {
-    fn __repr__(&self) -> PyResult<String> {
+    #[getter]
+    fn source<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        match self.path.source {
+            RemoteConfigSource::Datadog(id) => Ok(id.to_object(py).into_bound(py).into_any()),
+            RemoteConfigSource::Employee => Ok(PyNone::get_bound(py).to_owned().into_any()),
+        }
+    }
+
+    #[getter]
+    fn product<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyString>> {
+        Ok(PyString::new_bound(
+            py,
+            self.path.product.to_string().as_str(),
+        ))
+    }
+
+    #[getter]
+    fn config_id<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyString>> {
+        Ok(PyString::new_bound(py, self.path.config_id.as_str()))
+    }
+
+    #[getter]
+    fn name<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyString>> {
+        Ok(PyString::new_bound(py, self.path.name.as_str()))
+    }
+
+    fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
         Ok(format!(
-            "RemoteConfigPath(source=, product={}, config_id={}, name={})",
-            self.product, self.config_id, self.name,
+            "RemoteConfigPath(source={}, product={}, config_id={}, name={})",
+            self.source(py)?,
+            self.product(py)?,
+            self.config_id(py)?,
+            self.name(py)?,
         ))
     }
 }
@@ -158,16 +188,20 @@ impl RemoteConfigClientPy {
                     runtime_id,
                     move |change_type, file| {
                         let path = RemoteConfigPathPy {
-                            source: file.path().source.clone(),
-                            product: file.path().product,
-                            config_id: file.path().config_id.clone(),
-                            name: file.path().name.clone(),
+                            path: file.path().clone(),
                         };
                         let version = file.version();
-                        let contents = match *file.contents() {
+                        let file_contents = &*file.contents();
+                        let contents = match file_contents {
                             Ok(data) => Some(data),
                             Err(_) => None,
                         };
+
+                        match contents {
+                            None => {}
+                            Some(RemoteConfigData::LiveDebugger(live_debugger)) => {}
+                            Some(RemoteConfigData::DynamicConfig(dynamic_config)) => {}
+                        }
 
                         let _ = Python::with_gil(|py| {
                             on_change
