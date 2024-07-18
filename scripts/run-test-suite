@@ -3,6 +3,7 @@
 set -o pipefail
 
 CHECKPOINT_FILENAME="latest-success-commit"
+RIOT_USE_UV=true
 RIOT_PATTERN=${1}
 DDTRACE_FLAG=$([ -v _CI_DD_API_KEY ] && echo '--ddtrace')
 GIT_MESSAGE_LOWERCASE=$(git log -1 --pretty=%B | tr "[:upper:]" "[:lower:]")
