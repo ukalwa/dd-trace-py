@@ -36,7 +36,8 @@ clean-apt install rdfind
 echo "Deduplicating package files"
 cd sources/
 rdfind -makesymlinks true -makeresultsfile true -checksum sha256 -deterministic true -outputname deduped.txt .
-find -type l | while read -r l; do
+echo "Converting symlinks to relative paths"
+find . -type l | while read -r l; do
   target="$(realpath "$l")"
   ln -fs "$(realpath --relative-to="$(dirname "$(realpath -s "$l")")" "$target")" "$l"
 done
