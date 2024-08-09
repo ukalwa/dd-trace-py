@@ -31,6 +31,6 @@ cp ../lib-injection/sitecustomize.py sources/
 cp ../min_compatible_versions.csv sources/
 cp ../lib-injection/telemetry-forwarder.sh sources/
 
-clean-apt install python3
+clean-apt install rdfind
 echo "Deduplicating package files"
-python3 ../lib-injection/dedupe.py sources/ddtrace_pkgs/
+(cd sources/ && rdfind -makehardlinks true -makeresultsfile true -checksum sha256 -deterministic true -outputname deduped.txt .)
