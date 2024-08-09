@@ -33,4 +33,4 @@ cp ../lib-injection/telemetry-forwarder.sh sources/
 
 clean-apt install rdfind
 echo "Deduplicating package files"
-(cd sources/ && rdfind -makehardlinks true -makeresultsfile true -checksum sha256 -deterministic true -outputname deduped.txt .)
+(cd sources/ && rdfind -makesymlinks true -makeresultsfile true -checksum sha256 -deterministic true -outputname deduped.txt .)
