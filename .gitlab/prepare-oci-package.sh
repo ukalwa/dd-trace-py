@@ -31,6 +31,13 @@ cp ../lib-injection/sitecustomize.py sources/
 cp ../min_compatible_versions.csv sources/
 cp ../lib-injection/telemetry-forwarder.sh sources/
 
+# Deduplicate files by creating symlinks using rdfind, then convert the symlinks to relative paths
 clean-apt install rdfind
 echo "Deduplicating package files"
-(cd sources/ && rdfind -makesymlinks true -makeresultsfile true -checksum sha256 -deterministic true -outputname deduped.txt .)
+cd sources/
+rdfind -makesymlinks true -makeresultsfile true -checksum sha256 -deterministic true -outputname deduped.txt .
+find -type l | while read -r l; do
+  target="$(realpath "$l")"
+  ln -fs "$(realpath --relative-to="$(dirname "$(realpath -s "$l")")" "$target")" "$l"
+done
+cd ../
