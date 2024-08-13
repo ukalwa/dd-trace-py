@@ -421,12 +421,14 @@ venv = Venv(
                     pys=select_pys(min_version="3.8", max_version="3.11"),
                     pkgs={
                         "pytest-asyncio": "~=0.23.7",
+                        "pytest": "@git+https://github.com/brettlangdon/pytest.git@capture.errors#egg=pytest",
                     },
                 ),
                 Venv(
                     pys=select_pys(min_version="3.12"),
                     pkgs={
                         "pytest-asyncio": "~=0.23.7",
+                        "pytest": "@git+https://github.com/brettlangdon/pytest.git@capture.errors#egg=pytest",
                         "setuptools": latest,
                     },
                 ),
