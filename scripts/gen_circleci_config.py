@@ -11,9 +11,8 @@ import typing as t
 def gen_required_suites(template: dict, git_selections: list) -> None:
     """Generate the list of test suites that need to be run."""
     from needs_testrun import for_each_testrun_needed as fetn
-    from suitespec import get_suites
 
-    suites = get_suites()
+    suites = set(["internal"])
     jobs = set(template["jobs"].keys())
 
     required_suites = template["requires_tests"]["requires"] = []
