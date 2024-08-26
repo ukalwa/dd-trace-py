@@ -1,55 +1,28 @@
 stages:
   - package
-  - tests-gen
-  - tests-trigger
-  - quality-gate
+  - tests
   - shared-pipeline
+  - dogfood
   - benchmarks
   - macrobenchmarks
+  - dogfood
   - release
 
 variables:
   REPO_LANG: python # "python" is used everywhere rather than "py"
-  # CI_DEBUG_SERVICES: "true"
+  TESTRUNNER_IMAGE: brettlangdondatadog/testrunner:latest
 
-default:
-  interruptible: true
+.testrunner:
+  image: $TESTRUNNER_IMAGE
+  tags: [ "arch:amd64" ]
 
 include:
   - remote: https://gitlab-templates.ddbuild.io/libdatadog/include/one-pipeline.yml
-  - local: ".gitlab/services.yml" # Include early so others can use the definitions
   - local: ".gitlab/benchmarks.yml"
   - local: ".gitlab/package.yml"
+  - local: ".gitlab/tests.yml"
   - local: ".gitlab/macrobenchmarks.yml"
-  - local: ".gitlab/release.yml"
-  - local: ".gitlab/testrunner.yml"
-
-tests-gen:
-  stage: tests-gen
-  extends: .testrunner
-  script:
-    - pip install riot==0.20.1
-    - riot -v run --pass-env -s gitlab-gen-config -v
-  needs: []
-  artifacts:
-    paths:
-      - .gitlab/tests-gen.yml
-
-run-tests-trigger:
- stage: tests-trigger
- needs: [ tests-gen ]
- trigger:
-   include:
-     - artifact: .gitlab/tests-gen.yml
-       job: tests-gen
-   strategy: depend
-
-requirements_json_test:
-  rules:
-    - when: on_success
-  variables:
-    REQUIREMENTS_BLOCK_JSON_PATH: ".gitlab/requirements_block.json"
-    REQUIREMENTS_ALLOW_JSON_PATH: ".gitlab/requirements_allow.json"
+  - local: ".gitlab/dogfood.yml"
 
 package-oci:
   needs: [ download_dependency_wheels, download_ddtrace_artifacts ]
@@ -57,20 +30,13 @@ package-oci:
 onboarding_tests_installer:
   parallel:
     matrix:
-      - ONBOARDING_FILTER_WEBLOG: [test-app-python,test-app-python-container,test-app-python-alpine]
+      - ONBOARDING_FILTER_WEBLOG: [test-app-python,test-app-python-container,test-app-python-alpine-libgcc]
 
 
 onboarding_tests_k8s_injection:
   parallel:
     matrix:
-      - WEBLOG_VARIANT:
-          - dd-lib-python-init-test-django
-          - dd-lib-python-init-test-django-gunicorn
-          - dd-lib-python-init-test-django-gunicorn-alpine
-          - dd-lib-python-init-test-django-preinstalled
-          - dd-lib-python-init-test-django-unsupported-package-force
-          - dd-lib-python-init-test-django-uvicorn
-          - dd-lib-python-init-test-protobuf-old
+      - WEBLOG_VARIANT: [dd-lib-python-init-test-django, dd-lib-python-init-test-django-gunicorn, dd-lib-python-init-test-django-uvicorn, dd-lib-python-init-test-protobuf-old]
 
 deploy_to_di_backend:manual:
   stage: shared-pipeline
@@ -88,16 +54,3 @@ deploy_to_di_backend:manual:
     UPSTREAM_COMMIT_AUTHOR: $CI_COMMIT_AUTHOR
     UPSTREAM_TAG: $CI_COMMIT_TAG
     UPSTREAM_PACKAGE_JOB: build
-
-check_new_flaky_tests:
-  stage: quality-gate
-  extends: .testrunner
-  script:
-    - export DD_SITE=datadoghq.com
-    - export DD_API_KEY=$(aws ssm get-parameter --region us-east-1 --name ci.${CI_PROJECT_NAME}.dd-api-key-qualitygate --with-decryption --query "Parameter.Value" --out text)
-    - export DD_APP_KEY=$(aws ssm get-parameter --region us-east-1 --name ci.${CI_PROJECT_NAME}.dd-app-key-qualitygate --with-decryption --query "Parameter.Value" --out text)
-    - datadog-ci gate evaluate
-  except:
-    - main
-    - '[0-9].[0-9]*'
-    - 'mq-working-branch**'
