@@ -61,11 +61,11 @@ RUN if [ "$TARGETARCH" = "amd64" ]; \
   fi
 
 # Install Rust toolchain
-RUN curl https://sh.rustup.rs -sSf | \
-    sh -s -- --default-toolchain stable -y
+RUN curl https://sh.rustup.rs -sSf | sh -s -- --default-toolchain stable -y
 
 # Install Hatch
-ARG HATCH_VERSION=1.12.0
-RUN pipx install hatch==${HATCH_VERSION}
+ARG HATCH_VERSION=1.14.0
+ARG RIOT_VERSION=0.20.1
+RUN pipx install hatch==${HATCH_VERSION} riot==${RIOT_VERSION} virtualenv
 
 CMD ["/bin/bash"]
