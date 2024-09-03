@@ -17,6 +17,8 @@ from tests.utils import TracerTestCase
 
 from ..config import ELASTICSEARCH_CONFIG
 
+ES_URL = f"http://{ELASTICSEARCH_CONFIG['host']}:{ELASTICSEARCH_CONFIG['port']}"
+
 
 module_names = (
     "elasticsearch",
@@ -106,8 +108,8 @@ class ElasticsearchPatchTest(TracerTestCase):
         assert span.get_tag("component") == "elasticsearch"
         assert span.get_tag("span.kind") == "client"
         assert span.get_tag("elasticsearch.url") == "/%s" % self.ES_INDEX
-        assert span.get_tag("out.host") == "localhost"
-        assert span.get_tag("server.address") == "localhost"
+        assert span.get_tag("out.host") == ELASTICSEARCH_CONFIG["host"]
+        assert span.get_tag("server.address") == ELASTICSEARCH_CONFIG["host"]
         assert span.get_tag("custom_tag") == "bar"
         assert span.resource == "PUT /%s" % self.ES_INDEX
 
@@ -333,7 +335,7 @@ class ElasticsearchPatchTest(TracerTestCase):
         assert len(spans) == 1
 
     def _get_es(self):
-        es = elasticsearch.Elasticsearch(hosts=["http://localhost:%d" % ELASTICSEARCH_CONFIG["port"]])
+        es = elasticsearch.Elasticsearch(hosts=[ES_URL])
         if elasticsearch.__version__ < (5, 0, 0):
             es.transport.get_connection().headers["content-type"] = "application/json"
         return es

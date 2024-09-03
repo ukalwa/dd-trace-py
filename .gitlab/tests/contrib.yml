@@ -15,6 +15,9 @@ elasticsearch:
         discovery.type: single-node
   variables:
     SUITE_NAME: "elasticsearch"
+    TEST_ELASTICSEARCH_HOST: elasticsearch
+    TEST_OPENSEARCH_HOST: opensearch
+    TEST_OPENSEARCH_PORT: 9200
 
 fastapi:
   extends: .test_base_riot_snapshot

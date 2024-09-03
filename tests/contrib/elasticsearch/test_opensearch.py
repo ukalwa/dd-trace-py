@@ -1,3 +1,4 @@
+from ddtrace.constants import HOSTNAME_KEY
 import opensearchpy
 
 from tests.contrib.config import OPENSEARCH_CONFIG
@@ -14,7 +15,7 @@ class OpenSearchPatchTest(ElasticsearchPatchTest):
     """
 
     def _get_es(self):
-        return opensearchpy.OpenSearch(port=OPENSEARCH_CONFIG["port"])
+        return opensearchpy.OpenSearch(host=OPENSEARCH_CONFIG["host"], port=OPENSEARCH_CONFIG["port"])
 
     def _get_index_args(self):
         if opensearchpy.VERSION < (1, 1):
