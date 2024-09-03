@@ -54,6 +54,7 @@ class ElasticsearchPatchTest(TracerTestCase):
     ES_MAPPING = {"properties": {"name": {"type": "keyword"}, "created": {"type": "date", "format": "yyyy-MM-dd"}}}
 
     def create_index(self, es):
+        print(self, es)
         if elasticsearch.__version__ >= (8, 0, 0):
             es.options(ignore_status=400).indices.create(index=self.ES_INDEX, mappings=self.ES_MAPPING)
         else:
@@ -336,6 +337,7 @@ class ElasticsearchPatchTest(TracerTestCase):
 
     def _get_es(self):
         es = elasticsearch.Elasticsearch(hosts=[ES_URL])
+        print(self, es)
         if elasticsearch.__version__ < (5, 0, 0):
             es.transport.get_connection().headers["content-type"] = "application/json"
         return es
