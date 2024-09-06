@@ -2,24 +2,37 @@
   extends: .testrunner
   stage: static-analysis
 
-"${HATCH_ENV}":
+lint style:
   extends: .static_analysis_base
-  parallel:
-    HATCH_ENV:
-      - "lint:style"
-      - "lint:typing"
-      - "lint:security"
-      - "lint:riot"
-      - "lint:spelling"
   script:
-    - hatch run ${HATCH_ENV}
+    - hatch run lint:style
 
-lint:fmt-snapshots:
+lint typing:
+  extends: .static_analysis_base
+  script:
+    - hatch run lint:typing
+
+lint security:
+  extends: .static_analysis_base
+  script:
+    - hatch run lint:security
+
+lint riot:
+  extends: .static_analysis_base
+  script:
+    - hatch run lint:riot
+
+lint spelling:
+  extends: .static_analysis_base
+  script:
+    - hatch run lint:spelling
+
+lint fmt-snapshots:
   extends: .static_analysis_base
   script:
     - hatch run lint:fmt-snapshots && git diff --exit-code tests/snapshots hatch.toml
 
-scripts:tests:
+scripts tests:
   extends: .static_analysis_base
   script:
     - hatch run scripts:test
