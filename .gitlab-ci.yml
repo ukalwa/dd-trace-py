@@ -1,4 +1,5 @@
 stages:
+  - static-analysis
   - package
   - tests
   - shared-pipeline
@@ -30,6 +31,7 @@ include:
   - local: ".gitlab/macrobenchmarks.yml"
   - local: ".gitlab/dogfood.yml"
   - local: ".gitlab/release.yml"
+  - local: ".gitlab/static-analysis.yml"
 
 package-oci:
   needs: [ download_dependency_wheels, download_ddtrace_artifacts ]
