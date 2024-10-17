@@ -45,3 +45,4 @@ DROPPED_IO_COLLECTION_ERROR = "dropped_io"
 DROPPED_VALUE_TEXT = "[This value has been dropped because this span's size exceeds the 1MB size limit.]"
 
 ROOT_PARENT_ID = "undefined"
+ANNOTATIONS_CONTEXT_ID = "annotations_context_id"
