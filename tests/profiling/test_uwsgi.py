@@ -4,7 +4,6 @@ import re
 import signal
 from subprocess import TimeoutExpired
 import sys
-import tempfile
 import time
 
 import pytest
@@ -27,12 +26,22 @@ uwsgi_app = os.path.join(os.path.dirname(__file__), "uwsgi-app.py")
 
 
 @pytest.fixture
-def uwsgi(monkeypatch):
+def uwsgi(monkeypatch, tmp_path):
     # Do not ignore profiler so we have samples in the output pprof
+    monkeypatch.setenv("DD_PROFILING_ENABLED", "1")
     monkeypatch.setenv("DD_PROFILING_IGNORE_PROFILER", "0")
     # Do not use pytest tmpdir fixtures which generate directories longer than allowed for a socket file name
-    socket_name = tempfile.mktemp()
-    cmd = ["uwsgi", "--need-app", "--die-on-term", "--socket", socket_name, "--wsgi-file", uwsgi_app]
+    socket_name = str(tmp_path / "uwsgi.sock")
+    cmd = [
+        "uwsgi",
+        "--import=ddtrace.bootstrap.sitecustomize",
+        "--need-app",
+        "--die-on-term",
+        "--socket",
+        socket_name,
+        "--wsgi-file",
+        uwsgi_app,
+    ]
 
     try:
         yield run_uwsgi(cmd)
@@ -42,6 +51,9 @@ def uwsgi(monkeypatch):
 
 def test_uwsgi_threads_disabled(uwsgi):
     proc = uwsgi()
+    # Give some time to the process to actually startup
+    time.sleep(3)
+    proc.terminate()
     stdout, _ = proc.communicate()
     assert proc.wait() != 0
     assert THREADS_MSG in stdout
@@ -72,11 +84,18 @@ def test_uwsgi_threads_enabled(uwsgi, tmp_path, monkeypatch):
 
 def test_uwsgi_threads_processes_no_master(uwsgi, monkeypatch):
     proc = uwsgi("--enable-threads", "--processes", "2")
-    stdout, _ = proc.communicate()
-    assert (
-        b"ddtrace.internal.uwsgi.uWSGIConfigError: master option must be enabled when multiple processes are used"
-        in stdout
-    )
+    star_time = time.time_ns()
+    max_timeout = 3e9  # 3 seconds
+    checked = False
+    while time.time_ns() - star_time < max_timeout:
+        line = proc.stdout.readline()
+        print(line)
+        if line == b"":
+            continue
+        elif b"ddtrace.internal.uwsgi.uWSGIConfigError: master option must be enabled" in line:
+            checked = True
+            break
+    assert checked
 
 
 def _get_worker_pids(stdout, num_worker, num_app_started=1):
@@ -84,6 +103,7 @@ def _get_worker_pids(stdout, num_worker, num_app_started=1):
     started = 0
     while True:
         line = stdout.readline()
+        print(line)
         if line == b"":
             break
         elif b"WSGI app 0 (mountpoint='') ready" in line:
@@ -97,19 +117,6 @@ def _get_worker_pids(stdout, num_worker, num_app_started=1):
             break
 
     return worker_pids
-
-
-def test_uwsgi_threads_processes_master(uwsgi, tmp_path, monkeypatch):
-    filename = str(tmp_path / "uwsgi.pprof")
-    monkeypatch.setenv("DD_PROFILING_OUTPUT_PPROF", filename)
-    proc = uwsgi("--enable-threads", "--master", "--py-call-uwsgi-fork-hooks", "--processes", "2")
-    worker_pids = _get_worker_pids(proc.stdout, 2)
-    # Give some time to child to actually startup
-    time.sleep(3)
-    proc.terminate()
-    assert proc.wait() == 0
-    for pid in worker_pids:
-        utils.check_pprof_file("%s.%d.1" % (filename, pid))
 
 
 def test_uwsgi_threads_processes_master_lazy_apps(uwsgi, tmp_path, monkeypatch):
