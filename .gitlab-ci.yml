@@ -1,12 +1,5 @@
 stages:
-  - package
-  - tests
-  - shared-pipeline
-  - dogfood
-  - benchmarks
   - macrobenchmarks
-  - dogfood
-  - release
 
 variables:
   REPO_LANG: python # "python" is used everywhere rather than "py"
