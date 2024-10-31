@@ -66,7 +66,7 @@ benchmarks-pr-comment:
   script:
     - export REPORTS_DIR="$(pwd)/reports/" && (mkdir "${REPORTS_DIR}" || :)
     - git config --global url."https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.ddbuild.io/DataDog/".insteadOf "https://github.com/DataDog/"
-    - git clone --branch dd-trace-py https://github.com/DataDog/benchmarking-platform /platform && cd /platform
+    - git clone --branch igoragoli/investigation-python-benchmarks-version https://github.com/DataDog/benchmarking-platform /platform && cd /platform
     - "(for i in {1..2}; do ./steps/upload-results-to-benchmarking-api.sh && break; done) || :"
     - "./steps/post-pr-comment.sh || :"
   except:
