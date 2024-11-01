@@ -1345,7 +1345,11 @@ def _should_skip(condition=None, until: int = None):
 
 
 def flaky(until: int = None, condition: bool = None, reason: str = None):
-    return skip_if_until(until, condition=condition, reason=reason)
+    def wrapper(func):
+        return func
+
+    return wrapper
+    # return skip_if_until(until, condition=condition, reason=reason)
 
 
 def skip_if_until(until: int, condition=None, reason=None):
