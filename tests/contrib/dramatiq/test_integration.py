@@ -132,4 +132,5 @@ def test_fn_retry_exception(stub_broker, stub_worker):
 
 def test_simple_delayed_fix2():
     r = random.randint(1, 10)
+    print("still flaky")
     assert r % 2 == 0
