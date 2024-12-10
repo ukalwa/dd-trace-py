@@ -130,6 +130,6 @@ def test_fn_retry_exception(stub_broker, stub_worker):
     unpatch()
 
 
-def test_simple_delayed_fix():
+def test_simple_delayed_fix2():
     r = random.randint(1, 10)
     assert r % 2 == 0
