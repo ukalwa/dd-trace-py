@@ -5,6 +5,7 @@ system-tests parametric:
   needs: []
   variables:
     TEST_LIBRARY: python
+    CMAKE_BUILD_PARALLEL_LEVEL: 12
   script:
     - cd ../
     - git clone https://git@github.com/DataDog/system-tests.git system-tests
