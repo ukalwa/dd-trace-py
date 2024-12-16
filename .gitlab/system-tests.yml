@@ -1,0 +1,14 @@
+system-tests parametric:
+  image: registry.ddbuild.io/ci/libdatadog-build/system-tests:48436362
+  tags: ["arch:arm64"]
+  stage: system-tests
+  needs: []
+  variables:
+    TEST_LIBRARY: python
+  script:
+    - cd ../
+    - git clone https://git@github.com/DataDog/system-tests.git system-tests
+    - cd ./system-tests
+    - ln -s ../dd-trace-py binaries/dd-trace-py
+    - ./build.sh -i runner
+    - ./run.sh PARAMETRIC

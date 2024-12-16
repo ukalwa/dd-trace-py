@@ -4,6 +4,7 @@ stages:
   - tests-trigger
   - quality-gate
   - shared-pipeline
+  - system-tests
   - benchmarks
   - macrobenchmarks
   - release
@@ -23,6 +24,7 @@ include:
   - local: ".gitlab/macrobenchmarks.yml"
   - local: ".gitlab/release.yml"
   - local: ".gitlab/testrunner.yml"
+  - local: ".gitlab/system-tests.yml"
 
 tests-gen:
   stage: tests-gen
