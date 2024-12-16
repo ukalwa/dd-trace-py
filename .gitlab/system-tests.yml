@@ -9,6 +9,6 @@ system-tests parametric:
     - cd ../
     - git clone https://git@github.com/DataDog/system-tests.git system-tests
     - cd ./system-tests
-    - ln -s ../dd-trace-py binaries/dd-trace-py
+    - cp -r ../dd-trace-py binaries/dd-trace-py
     - ./build.sh -i runner
     - ./run.sh PARAMETRIC
