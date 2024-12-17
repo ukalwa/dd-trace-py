@@ -1,4 +1,4 @@
-system-tests parametric:
+.system_tests_base:
   image: registry.ddbuild.io/ci/libdatadog-build/system-tests:48436362
   tags: ["runner:docker"]
   stage: system-tests
@@ -6,10 +6,19 @@ system-tests parametric:
   variables:
     TEST_LIBRARY: python
     CMAKE_BUILD_PARALLEL_LEVEL: 12
-  script:
+  before_script:
     - cd ../
     - git clone https://git@github.com/DataDog/system-tests.git system-tests
     - cd ./system-tests
     - cp -r ../dd-trace-py binaries/dd-trace-py
+
+parametric:
+  extends: .system_tests_base
+  services:
+    - !reference [.services, testagent]
+  before_script:
+    - !reference [.system_tests_base, before_script]
+    - export DD_TRACE_AGENT_URL="http://testagent:9126"
+  script:
     - ./build.sh -i runner
     - ./run.sh PARAMETRIC
