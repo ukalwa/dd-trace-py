@@ -22,9 +22,6 @@ include:
   parallel: 4
   # DEV: This is the max retries that GitLab currently allows for
   retry: 2
-  before_script:
-    - !reference [.testrunner, before_script]
-    - pip install riot==0.20.1
   script:
     - export PYTEST_ADDOPTS="${PYTEST_ADDOPTS} --ddtrace"
     - export _DD_CIVISIBILITY_USE_CI_CONTEXT_PROVIDER=true
@@ -63,7 +60,6 @@ build_base_venvs:
     PIP_VERBOSE: 1
     DD_PROFILING_NATIVE_TESTS: 1
   script:
-    - pip install riot==0.20.1
     - riot -P -v generate --python=$PYTHON_VERSION
   artifacts:
     name: venv_$PYTHON_VERSION
@@ -85,7 +81,6 @@ build_base_venvs:
   retry: 2
   before_script:
     - !reference [.testrunner, before_script]
-    - pip install riot==0.20.1
     - unset DD_SERVICE
     - unset DD_ENV
     - unset DD_TAGS
